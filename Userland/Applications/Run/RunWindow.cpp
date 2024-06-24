@@ -25,6 +25,7 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <pwd.h>
 
 RunWindow::RunWindow()
     : m_path_history()
@@ -112,7 +113,20 @@ void RunWindow::do_run()
 bool RunWindow::run_as_command(DeprecatedString const& run_input)
 {
     pid_t child_pid;
-    char const* shell_executable = "/bin/Shell"; // TODO query and use the user's preferred shell.
+    struct passwd pw_entry = {}, *result;
+    int bufsize;
+
+    if ((bufsize = sysconf(_SC_GETPW_R_SIZE_MAX)) == -1)
+        abort();
+
+    char buffer[bufsize] = {};
+    int getpw_error = getpwuid_r(getuid(), &pw_entry, buffer, bufsize, &result);
+    if(getpw_error != 0 || !result) {
+        dbgln("Run: Could not getpwuid_r(), got error code {}", getpw_error);
+        return false;
+    }
+
+    char const* shell_executable = strlen(result->pw_shell) == 0 ? "/bin/sh" : result->pw_shell;
     char const* argv[] = { shell_executable, "-c", run_input.characters(), nullptr };
 
     if ((errno = posix_spawn(&child_pid, shell_executable, nullptr, nullptr, const_cast<char**>(argv), environ))) {
